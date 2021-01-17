@@ -1,181 +1,269 @@
-﻿using System;
-using System.Collections.Generic;
-using UnityEngine;
+/*----------------------------------------------------------------------------*/
+/*                                                                            */
+/*    Module:       main.cpp                                                  */
+/*    Author:       C:\Users\lukec                                            */
+/*    Created:      Tue Nov 03 2020                                           */
+/*    Description:  V5 project                                                */
+/*                                                                            */
+/*----------------------------------------------------------------------------*/
 
-public class GeneticAlgorithm : MonoBehaviour
+// ---- START VEXCODE CONFIGURED DEVICES ----
+// Robot Configuration:
+// [Name]               [Type]        [Port(s)]
+// leftfront            motor         20              
+// leftback             motor         13              
+// rightfront           motor         14              
+// rightback            motor         18              
+// inertia              inertial      10              
+// strafeencoder        encoder       E, F            
+// vertencoder          encoder       C, D            
+// ---- END VEXCODE CONFIGURED DEVICES ----
+
+#include "vex.h"
+
+using namespace vex;
+
+int xPos = 0;
+int yPos = 0;
+int yawValue = 0;
+int yG = 0;
+int xG = 0;
+int xposG = 0;
+int yposG = 0;
+int debugX = 0;
+int debugY = 0;
+
+bool moving = false;
+
+int positions[5][2] = 
 {
-    //public
-    public int InputSize;
-    public int OutputSize;
+  {0, 3100},
+  {-3000, 3100},
+  {-2000, 200},
+  {-1000, 1000},
+  {0, 0}
+};
 
-    //private
-    private int[] neuralNetworkSizes;
-    private int networkSize;
-    private double trainingRate;
+int rotatedPoints[5][2];
 
-    private List<List<double[]>> weights;
-    private List<double[]> biases;
-    private List<double[]> outputs;
+void display() {
+  while(true) {
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Vertencoder: %f", vertencoder.position(degrees));
 
-    private System.Random rand;
+    Brain.Screen.setCursor(2, 1);
+    Brain.Screen.print("Strafeencoder: %f", strafeencoder.position(degrees));
 
-    public List<List<double[]>> getWeights
-    {
-        get { return weights; }
+    Brain.Screen.setCursor(3, 1);
+    Brain.Screen.print("Is moving: %f", moving);
+
+    Brain.Screen.setCursor(4, 1);
+    Brain.Screen.print("Next Y Position: %d", yG);
+
+    Brain.Screen.setCursor(5, 1);
+    Brain.Screen.print("Next X Position: %d", xG);
+
+    Brain.Screen.setCursor(6, 1);
+    Brain.Screen.print("Yaw Value: %d", yawValue);
+
+    Brain.Screen.setCursor(7, 1);
+    Brain.Screen.print("X Position: %d", xposG);
+
+    Brain.Screen.setCursor(8, 1);
+    Brain.Screen.print("Y Position: %d", yposG);
+
+    Brain.Screen.setCursor(9, 1);
+    Brain.Screen.print("X math value: %d", debugX);
+
+    Brain.Screen.setCursor(10, 1);
+    Brain.Screen.print("Y math value: %d", debugY);
+
+    wait(15, msec);
+    Brain.Screen.clearScreen();
+
+  }
+}
+
+void rotate(int degree, int cx, int cy) {
+  int arraySize = sizeof(rotatedPoints) / sizeof(rotatedPoints[0]);
+  double degrees = ((degree) * (3.145926/180));
+
+  for(int i=0; i<arraySize; i++) {
+      int x = positions[i][0];
+      int y = positions[i][1];
+
+      rotatedPoints[i][0] = round(cos(degrees) * (x - cx) - sin(degrees) * (y - cy) + cx);
+      rotatedPoints[i][1] = round(sin(degrees) * (x - cx) + cos(degrees) * (y - cy) + cy);
+    }
+}
+
+void initRotations() {
+  int arraySize = sizeof(rotatedPoints) / sizeof(rotatedPoints[0]);
+
+  for(int i=0; i<arraySize; i++){
+    rotatedPoints[i][0] = positions[i][0];
+    rotatedPoints[i][1] = positions[i][1];
+  }
+}
+
+float distanceXY(int x, int y, int x2, int y2) {
+  float dx = x - x2;
+  float dy = y - y2;
+
+  return sqrt(dx*dx + dy*dy);
+}
+
+void moveTo(int posIndex, float speed) {
+  //resetting the encoders
+  vertencoder.setPosition(0, degrees);
+  strafeencoder.setPosition(0, degrees);
+
+  int x = rotatedPoints[posIndex][0];
+  int y = rotatedPoints[posIndex][1];
+
+  xG = x;  
+  yG = y;
+
+  moving = true;
+  
+  //calculating motor speeds and direction
+  int startPosX = xPos;
+  int startPosY = yPos;
+
+  float originalSpeed = speed;
+
+  while(!(abs(x-xPos) < 7 && abs(y-yPos) < 7)) {
+    double xValue = (x - xPos);
+    double yValue = (y - yPos);
+
+    debugX = x;
+    debugY = y;
+
+    //Normalizing the vector
+    float length = sqrt(xValue * xValue + yValue * yValue);
+
+    xValue /= length;
+    yValue /= length;
+    
+    //applying those values to the motors
+    double frontLeft = (double)((yValue + xValue));
+    double backLeft = (double)((yValue - xValue));
+    double frontRight = (double)((yValue - xValue));
+    double backRight = (double)((yValue + xValue));
+
+    if(distanceXY(xPos, yPos, x, y) <= 500) {
+      speed = originalSpeed / 4;
+    }
+    else {
+      speed = originalSpeed;
     }
 
-    public List<double[]> getBiases
-    {
-        get { return biases; }
-    }
+    leftfront.setVelocity(frontLeft * speed, vex::velocityUnits::pct);
+    leftback.setVelocity(backLeft * speed, vex::velocityUnits::pct);
+    rightfront.setVelocity(frontRight * speed, vex::velocityUnits::pct);
+    rightback.setVelocity(backRight * speed, vex::velocityUnits::pct);
+    
+    leftfront.spin(forward);
+    leftback.spin(forward);
+    rightfront.spin(forward);
+    rightback.spin(forward);
 
-    // Start is called before the first frame update
-    void Awake()
-    {
-        //CREATE THE SHAPE OF THE NETWORK HERE
-        neuralNetworkSizes = new int[4] { 2, 4, 4, 1 };
+    yPos = strafeencoder.position(degrees) - startPosY;
+    xPos = vertencoder.position(degrees) + startPosX;
 
-        trainingRate = 0.7;
+    xposG = xPos;
+    yposG = yPos;
+  }
 
-        //-----------everything under here shouldn't be changed-----------
-        rand = new System.Random();
+  xPos = positions[posIndex][0];
+  yPos = positions[posIndex][1];
 
-        networkSize = neuralNetworkSizes.Length;
-        InputSize = neuralNetworkSizes[0];
-        OutputSize = neuralNetworkSizes[networkSize - 1];
+  leftfront.stop();
+  leftback.stop();
+  rightfront.stop();
+  rightback.stop();
+  moving = false;
+}
 
-        weights = randomMatrix(0.3f, 0.7f); //layer, neuron, prevNeuron
-        biases = randomList(0.3f, 0.7f);
+void rightinertialturn(double goaldegrees)
+{
+  inertia.calibrate();
+  while (inertia.isCalibrating()) {
+    wait(.3, seconds);
+  }
 
-        outputs = new List<double[]>();
+  leftfront.setVelocity(20, vex::velocityUnits::pct);
+  leftback.setVelocity(20, vex::velocityUnits::pct);
+  rightfront.setVelocity(20, vex::velocityUnits::pct);
+  rightback.setVelocity(20, vex::velocityUnits::pct);
+  
+  while(inertia.rotation(degrees) < goaldegrees)
+  {
+    leftfront.spin(forward);
+    leftback.spin(forward);
+    rightfront.spin(reverse);
+    rightback.spin(reverse);
+  }
 
-        for(int layer=0; layer<networkSize; layer++)
-        {
-            outputs.Add(new double[neuralNetworkSizes[layer]]);
-        }
-    }
 
-    //public methods
-    public void applyChanges()
-    {
-        //put movement scripts here
-    }
+  rotate(-goaldegrees, xPos, yPos);
 
-    public void train()
-    {
-        calculate(getInput());
-    }
+  leftfront.stop();
+  leftback.stop();
+  rightfront.stop();
+  rightback.stop();
 
-    public void mutate(List<List<double[]>> weights, List<double[]> biases)
-    {
-        this.weights = weights;
-        this.biases = biases;
+  wait (1,seconds);
+}
 
-        //code to mutate the neural network for the next generation
-        for (int layer = 1; layer < networkSize; layer++)
-        {
-            for (int neuron = 0; neuron < neuralNetworkSizes[layer]; neuron++)
-            {
-                //mutating the biases
-                biases[layer][neuron] += randomDouble(-trainingRate, trainingRate);
+void leftinertialturn(double goaldegrees)
+{
+  goaldegrees *= -1;
 
-                for (int prevneuron = 0; prevneuron < neuralNetworkSizes[layer - 1]; prevneuron++)
-                {
-                    //mutating the weights
-                    weights[layer][neuron][prevneuron] += randomDouble(-trainingRate, trainingRate);
-                }
-            }
-        }
-    }
+  inertia.calibrate();
+  while (inertia.isCalibrating()) {
+    wait(.3, seconds);
+  }
 
-    //helper methods
-    private double[] getInput()
-    {
-        //Here is where you get input to feed into the network
-        double[] input = new double[InputSize];
+  leftfront.setVelocity(20, vex::velocityUnits::pct);
+  leftback.setVelocity(20, vex::velocityUnits::pct);
+  rightfront.setVelocity(20, vex::velocityUnits::pct);
+  rightback.setVelocity(20, vex::velocityUnits::pct);
 
-        for(int i=0; i<InputSize; i++)
-        {
-            input[i] = 0; //set the input here
-        }
+  while(inertia.rotation(degrees) > goaldegrees)
+  {
+    leftfront.spin(reverse);
+    leftback.spin(reverse);
+    rightfront.spin(forward);
+    rightback.spin(forward);
+  }
 
-        return input;
-    }
+  rotate(-goaldegrees, xPos, yPos); //position tracking
 
-    private void calculate(double[] input)
-    {
-        if(input.Length != InputSize)
-        {
-            Debug.Log("Input size is incorrect!");
-            return;
-        }
+  leftfront.stop();
+  leftback.stop();
+  rightfront.stop();
+  rightback.stop();
 
-        outputs[0] = input;
+  wait (1,seconds);
+}
 
-        for(int layer=1; layer<networkSize; layer++)
-        {
-            for(int neuron=0; neuron<neuralNetworkSizes[layer]; neuron++)
-            {
-                double sum = biases[layer][neuron];
-                for(int prevneuron=0; prevneuron<neuralNetworkSizes[layer-1]; prevneuron++)
-                {
-                    sum += outputs[layer-1][prevneuron] * weights[layer][neuron][prevneuron];
-                }
+int main() {
+  // Initializing Robot Configuration. DO NOT REMOVE!
+  vexcodeInit();
+  initRotations();
+  thread t(display);
 
-                outputs[layer][neuron] = sigmoid(sum);
-            }
-        }
-    }
-
-    private List<double[]> randomList(float min, float max)
-    {
-        List<double[]> doubleList = new List<double[]>();
-
-        for(int layer=0; layer<networkSize; layer++)
-        {
-            doubleList.Add(randomArray(min, max, neuralNetworkSizes[layer]));
-        }
-
-        return doubleList;
-    }
-
-    private List<List<double[]>> randomMatrix(float min, float max)
-    {
-        List<List<double[]>> matrix = new List<List<double[]>>();
-
-        matrix.Add(new List<double[]>());
-        for (int layer = 1; layer < networkSize; layer++)
-        {
-            matrix.Add(new List<double[]>());
-            for (int neuron = 0; neuron < neuralNetworkSizes[layer]; neuron++)
-            {
-                matrix[layer].Add(randomArray(min, max, neuralNetworkSizes[layer - 1]));
-            }
-        }
-
-        return matrix;
-    }
-
-    private double[] randomArray(float min, float max, int length)
-    {
-        double[] output = new double[length];
-
-        for(int i=0; i<length; i++)
-        {
-            output[i] = randomDouble(min, max);
-        }
-
-        return output;
-    }
-
-    private double randomDouble(double min, double max)
-    {
-        return (rand.NextDouble() * (max - min)) + min;
-    }
-
-    //activation functions
-    private double sigmoid(double x)
-    {
-        return (double)1 / (1 + Math.Exp(-x));
-    }
+  wait(3, seconds);
+  moveTo(0 ,50);
+  wait(1, seconds);
+  rightinertialturn(90);
+  wait(2, seconds);
+  moveTo(1, 40);
+  wait(1, seconds);
+  moveTo(2, 40);
+  wait(1, seconds);
+  moveTo(3, 50);
+  wait(1, seconds);
+  moveTo(4, 30);
 }
