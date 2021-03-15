@@ -31,6 +31,9 @@ public class Core : MonoBehaviour
     [Tooltip("How fast the network will learn / mutate over time")]
     [SerializeField] private float Learning_Rate;
 
+    [Tooltip("Check this box if you want the network with a higher fitness to be treated as better")]
+    [SerializeField] private bool Higher_Fitness_Is_Better = true;
+
     [Space]
     [Tooltip("Will save the best network to your pc to be reused.")]
     [SerializeField] private bool SaveNetwork = false;
@@ -153,7 +156,8 @@ public class Core : MonoBehaviour
         {
             if (timeElapsedOnGen < TimePerGeneration)
             {
-
+                //updating the networks
+                tickAllNetworks();
 
                 //update the timer
                 timeElapsedOnGen += Time.deltaTime;
@@ -176,7 +180,7 @@ public class Core : MonoBehaviour
     /// <summary>
     /// Initializing as many networks as the user specifies in the editor
     /// 
-    /// Calculates a random set of 
+    /// Calculates a random set of weights and biases and assigns it to a newly instantiated network object
     /// </summary>
     private void initNetworks()
     {
@@ -215,7 +219,50 @@ public class Core : MonoBehaviour
 
             //running the action code of the network
             networks[network].GetComponent<Network>().doAction();
+
+            //calculating the fitness of the network
+            networks[network].GetComponent<Network>().Network_Fitness = networks[network].GetComponent<Network>().getFitness();
         }
+    }
+
+    /// <summary>
+    /// Uses a Bubble Sorting algorithm to move the best networks to the top. Not very efficient, but it works just fine.
+    /// 
+    /// Depending on what the user selected for better fitness, the algorithm will either move the lower fitness or the higher fitness to the top of the list.
+    /// 
+    /// This method is called at the end of the generation to get help it select the best networks to clone and reproduce for the next generation.
+    /// </summary>
+    private void getTopNetworks()
+    {
+        bool change = false;
+
+        //bubble sort algorithm to get the best networks at the top of the list (0 index)
+        do
+        {
+            change = false;
+
+            for(int i=0; i < networks.Count-1; i++)
+            {
+                if(networks[i].GetComponent<Network>().Network_Fitness < networks[i + 1].GetComponent<Network>().Network_Fitness && Higher_Fitness_Is_Better)
+                {
+                    //switch the networks so that the higher fitness network is on top
+                    GameObject temp = networks[i];
+                    networks[i] = networks[i + 1];
+                    networks[i + 1] = temp;
+
+                    change = true; //telling the loop to keep going
+                }
+                else if(networks[i].GetComponent<Network>().Network_Fitness > networks[i+1].GetComponent<Network>().Network_Fitness && !Higher_Fitness_Is_Better)
+                {
+                    //switch the networks so that the lower fitness network is on top
+                    GameObject temp = networks[i];
+                    networks[i] = networks[i + 1];
+                    networks[i + 1] = temp;
+
+                    change = true; //telling the loop to keep going
+                }
+            }
+        } while (change);
     }
     #endregion
 

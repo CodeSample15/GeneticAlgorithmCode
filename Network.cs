@@ -11,6 +11,8 @@ public class Network : MonoBehaviour
     private List<float[]> biases;
     private float[] output;
 
+    public float Network_Fitness;
+
     //read only access
     public List<List<float[]>> Weights
     {
@@ -71,6 +73,7 @@ public class Network : MonoBehaviour
 
         //set the fitness of the network to how well it's performing
         //for example: set the fitness to the amount of distance that the network traveled from a certain distance
+        //you can chose whether a lower or higher fitness is better in the Core script in the editor
 
         //END OF EDIT REGION
 
