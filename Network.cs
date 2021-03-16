@@ -29,11 +29,19 @@ public class Network : MonoBehaviour
         this.biases = biases;
         output = new float[core.OutputSize];
 
+        Network_Fitness = 0;
+
         //START OF EDIT REGION
 
         //put any code here that you want for initialization here
 
         //END OF EDIT REGION
+    }
+
+    //init without setting the weights and biases
+    public void Init()
+    {
+        Init(this.weights, this.biases);
     }
 
     public List<float> getInput()

@@ -11,14 +11,20 @@ public class Core : MonoBehaviour
     [Tooltip("Put the GameObject that will become your network here")]
     [SerializeField] private GameObject Neural_Network;
 
+
+
     [Header("Specifying network sizes and activation functions")]
+
     [Tooltip("First and last values represent input and output values. All values in between are hidden layer sizes.")]
     [SerializeField] private List<int> Network_Sizes;
 
     [Tooltip("For telling the network which activation functions to use on each layer (The first one will be ignored since it is the input layer)")]
     [SerializeField] private List<ActivationFunctions> NetworkActivationFunctions;
 
+
+
     [Header("Training varialbes")]
+
     [Tooltip("How long (in seconds) each generation should last")]
     [SerializeField] private float TimePerGeneration;
 
@@ -27,6 +33,9 @@ public class Core : MonoBehaviour
 
     [Tooltip("How many generations the network should train for")]
     [SerializeField] private int Number_Of_Gens;
+
+    [Tooltip("How likely a network will be mutated.")]
+    [SerializeField] private float MutationRate;
 
     [Tooltip("How fast the network will learn / mutate over time")]
     [SerializeField] private float Learning_Rate;
@@ -41,12 +50,17 @@ public class Core : MonoBehaviour
     [Tooltip("Only fill in if you clicked Save Network")]
     [SerializeField] private string NetworkSaveName;
 
+
+
     [Space]
     [Header("Initialization variables")]
     [Space]
 
     [Tooltip("Where the networks will be initialized to begin training.")]
     [SerializeField] private Vector3 StartPosition;
+
+    [Tooltip("the initial rotation of the networks")]
+    [SerializeField] private Vector3 StartRotation;
 
     [Space]
 
@@ -74,6 +88,11 @@ public class Core : MonoBehaviour
 
     //giving the other programs limited access to some of the private data
     #region Read Only Variables
+    public int CurrentGen
+    {
+        get { return currentGen; }
+    }
+
     public int NetworkSize
     {
         get { return networkSize; }
@@ -99,6 +118,11 @@ public class Core : MonoBehaviour
         get { return Number_Of_Networks; }
     }
 
+    public float mutation_rate
+    {
+        get { return MutationRate; }
+    }
+
     public float lr
     {
         get { return Learning_Rate; }
@@ -112,6 +136,7 @@ public class Core : MonoBehaviour
 
     void Awake()
     {
+        //initializing variables that doesn't require user input first
         successfulInit = false;
 
         currentGen = 0;
@@ -136,9 +161,12 @@ public class Core : MonoBehaviour
             Debug.LogError("Negative time given for each generation!");
         else if (SaveNetwork && NetworkSaveName.Length == 0)
             Debug.LogError("Save button is set to true but there isn't a save name entered!");
+        else if (MutationRate < 0)
+            Debug.LogError("Mutation rate is negative!");
         else
         {
             Debug.Log("Initializing...");
+
             networkSize = Network_Sizes.Count;
             inputSize = Network_Sizes[0];
             outputSize = Network_Sizes[Network_Sizes.Count - 1];
@@ -147,31 +175,46 @@ public class Core : MonoBehaviour
 
             successfulInit = true;
             Debug.Log("Finished!");
+
+            Debug.Log("Starting training for generation 1");
         }
     }
 
     void Update()
     {
-        if (currentGen < Number_Of_Gens)
+        if (successfulInit) //only running training session if everything was initialized without any errors
         {
-            if (timeElapsedOnGen < TimePerGeneration)
+            if (currentGen < Number_Of_Gens)
             {
-                //updating the networks
-                tickAllNetworks();
+                if (timeElapsedOnGen < TimePerGeneration)
+                {
+                    //updating the networks
+                    tickAllNetworks();
 
-                //update the timer
-                timeElapsedOnGen += Time.deltaTime;
+                    //update the timer
+                    timeElapsedOnGen += Time.deltaTime;
+                }
+                else
+                {
+                    //reset the networks and apply genetic algorithm------------------------------------------------------------------
+
+                    //first get the best networks to the top of the list
+                    getTopNetworks();
+
+                    //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
+                    SetLowerNetworks();
+
+                    //reset all of the networks for the next generation
+                    resetNetworks();
+
+                    timeElapsedOnGen = 0f; //resetting the time
+                    currentGen++; //starting a new generation
+                }
             }
             else
             {
-                //reset the networks and apply genetic algorithm
-
-                currentGen++;
+                //end training and save the best network
             }
-        }
-        else
-        {
-            //end training and possibly save the best network
         }
     }
 
@@ -192,6 +235,7 @@ public class Core : MonoBehaviour
 
             //initializing the network with random weights and biases
             networks[0].GetComponent<Network>().Init(randomMatrix(Min_Weight_Init, Max_Weight_Init), randomList(Min_Bias_Init, Max_Bias_Init));
+            networks[0].transform.rotation = Quaternion.Euler(StartRotation);
         }
     }
 
@@ -263,6 +307,91 @@ public class Core : MonoBehaviour
                 }
             }
         } while (change);
+
+        //now the networks in the "networks" list are ordered first to last, best to worst. This sets up the top networks to be reused in the next generation, and the lower networks will have their weights and biases set the the best networks and mutated
+    }
+
+    /// <summary>
+    /// Resets all of the networks in the networks list by setting their position and rotation to what the user specified.
+    /// </summary>
+    private void resetNetworks()
+    {
+        foreach(GameObject network in networks)
+        {
+            network.GetComponent<Network>().Network_Fitness = 0; //resetting the network fitness
+            network.transform.position = startPosition; //resetting position
+            network.transform.rotation = Quaternion.Euler(StartRotation); //resetting rotation
+
+            network.GetComponent<Network>().Init();
+        }
+    }
+
+    /// <summary>
+    /// Iterate through all of the lower networks in the networks list and assign them mutated brains of the better networks
+    /// </summary>
+    private void SetLowerNetworks()
+    {
+        int cutoff = (int)Mathf.Ceil(Number_Of_Networks / 2); //where the brains will start to be duplicated
+
+        for(int i=cutoff; i<Number_Of_Networks; i++)
+        {
+            //getting one of the good networks and cloning it to the worse network
+            Network newNetwork = networks[i - cutoff].GetComponent<Network>();
+            newNetwork = Mutate(newNetwork); //mutating the old network for genetic variation 
+
+            //replacing the old network values with the newly mutated one
+            networks[i].GetComponent<Network>().Init(newNetwork.Weights, newNetwork.Biases);
+        }
+    }
+
+    /// <summary>
+    /// Returns a mutated version of the network modified as per the parameters the user specifies in the editor (mutation rate and learning rate)
+    /// </summary>
+    private Network Mutate(Network network)
+    {
+        //declaring variables for use in the loop and initializing them to prevent errors
+        List<float[]> netBiases = network.Biases;
+        List<List<float[]>> netWeights = network.Weights;
+
+        bool BiasMutate = false;
+        bool WeightMutate = false;
+
+        float MutateAmount = 0f;
+
+        //mutating
+        for(int layer=1; layer<networkSize; layer++)
+        {
+            for(int neuron=0; neuron<Network_Sizes[layer]; neuron++)
+            {
+                //calculating a random chance of mutation. If the random number generated is less than or equal to the mutation rate, then the value the loop is currently on will be mutated
+                BiasMutate = Random.Range(0.0f, 1.0f) <= MutationRate;
+
+
+                //mutating the bias
+                if (BiasMutate)
+                {
+                    MutateAmount = Random.Range(-Learning_Rate, Learning_Rate);
+                    netBiases[layer][neuron] += MutateAmount;
+                }
+
+
+                for (int prevneuron=0; prevneuron<Network_Sizes[layer-1]; prevneuron++)
+                {
+                    WeightMutate = Random.Range(0.0f, 1.0f) <= MutationRate;
+
+                    //mutate the weight
+                    if (WeightMutate)
+                    {
+                        MutateAmount = Random.Range(-Learning_Rate, Learning_Rate);
+                        netWeights[layer][neuron][prevneuron] += MutateAmount;
+                    }
+                }
+            }
+        }
+
+        //reinitializing the mutated network and returning
+        network.Init(netWeights, netBiases);
+        return network;
     }
     #endregion
 
