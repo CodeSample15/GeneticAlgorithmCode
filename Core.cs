@@ -1,5 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
 public class Core : MonoBehaviour
@@ -44,10 +46,13 @@ public class Core : MonoBehaviour
     [SerializeField] private bool Higher_Fitness_Is_Better = true;
 
     [Space]
-    [Tooltip("Will save the best network to your pc to be reused.")]
+    [Tooltip("Will save the best network at the end of training to your pc to be reused.")]
     [SerializeField] private bool SaveNetwork = false;
 
-    [Tooltip("Only fill in if you clicked Save Network")]
+    [Tooltip("Load a previously trained network")]
+    [SerializeField] private bool LoadNetwork = false;
+
+    [Tooltip("Only fill in if you clicked Save Network. Works for both saving and loading a network")]
     [SerializeField] private string NetworkSaveName;
 
 
@@ -186,7 +191,7 @@ public class Core : MonoBehaviour
         {
             if (currentGen < Number_Of_Gens)
             {
-                if (timeElapsedOnGen < TimePerGeneration)
+                if (timeElapsedOnGen < TimePerGeneration && !AllNetworksDead())
                 {
                     //updating the networks
                     tickAllNetworks();
@@ -214,6 +219,16 @@ public class Core : MonoBehaviour
             else
             {
                 //end training and save the best network
+                if (SaveNetwork)
+                {
+                    Debug.Log("Saving the best network...");
+                    getTopNetworks();
+
+                    Save_Network_To_Device(networks[0].GetComponent<Network>());
+                    Debug.Log("Saved!");
+                }
+
+                Destroy(gameObject); //end the training process
             }
         }
     }
@@ -234,7 +249,39 @@ public class Core : MonoBehaviour
             networks.Insert(0, Instantiate(Neural_Network, StartPosition, Quaternion.identity));
 
             //initializing the network with random weights and biases
-            networks[0].GetComponent<Network>().Init(randomMatrix(Min_Weight_Init, Max_Weight_Init), randomList(Min_Bias_Init, Max_Bias_Init));
+            if (LoadNetwork)
+            {
+                if (Load_Network() == null)
+                    Debug.LogWarning("No network found to load. Using random weights and biases instead");
+                else
+                {
+                    Debug.Log("Network found!");
+
+                    //load the network and intialize a generation with them
+                    NetworkData data = Load_Network();
+
+                    //if any of the settings are off, change the settings and continue with a warning
+                    if(data.network.Biases.Count != networkSize || data.network.Biases[0].Length != inputSize || data.network.Biases[data.network.Biases.Count - 1].Length != outputSize)
+                    {
+                        Debug.LogWarning("Loaded network has different input, output, or size than what is required! Changing settings and attempting to train...");
+
+                        //changing the settings of the Core script to match that of the loaded model
+                        networkSize = data.network.Biases.Count;
+                        inputSize = data.network.Biases[0].Length;
+                        outputSize = data.network.Biases[data.network.Biases.Count - 1].Length;
+                    }
+
+                    //initializing the network with the loaded parameters
+                    networks[0].GetComponent<Network>().Init(data.network.Weights, data.network.Biases);
+                }
+            }
+            else
+            {
+                //create a randomly initialized network instead
+                networks[0].GetComponent<Network>().Init(randomMatrix(Min_Weight_Init, Max_Weight_Init), randomList(Min_Bias_Init, Max_Bias_Init));
+            }
+
+            //setting the rotation of the initialized network
             networks[0].transform.rotation = Quaternion.Euler(StartRotation);
         }
     }
@@ -249,23 +296,32 @@ public class Core : MonoBehaviour
     {
         for(int network=0; network<networks.Count; network++)
         {
-            //getting the input from the network
-            List<float> input = networks[network].GetComponent<Network>().getInput();
+            //checking to see if the network failed
+            networks[network].GetComponent<Network>().checkForFail();
 
 
-            //calculating output
-            float[] networkOutput = Calculate(networks[network].GetComponent<Network>(), input);
+            //only continuing if the network is still "alive"
+            if (networks[network].GetComponent<Network>().Alive)
+            {
+                //getting the input from the network
+                List<float> input = networks[network].GetComponent<Network>().getInput();
 
 
-            //setting the output for the network
-            networks[network].GetComponent<Network>().setOutput(networkOutput);
+                //calculating output
+                float[] networkOutput = Calculate(networks[network].GetComponent<Network>(), input);
 
 
-            //running the action code of the network
-            networks[network].GetComponent<Network>().doAction();
+                //setting the output for the network
+                networks[network].GetComponent<Network>().setOutput(networkOutput);
 
-            //calculating the fitness of the network
-            networks[network].GetComponent<Network>().Network_Fitness = networks[network].GetComponent<Network>().getFitness();
+
+                //running the action code of the network
+                networks[network].GetComponent<Network>().doAction();
+                
+
+                //calculating the fitness of the network
+                networks[network].GetComponent<Network>().Network_Fitness = networks[network].GetComponent<Network>().getFitness();
+            }
         }
     }
 
@@ -393,6 +449,28 @@ public class Core : MonoBehaviour
         network.Init(netWeights, netBiases);
         return network;
     }
+
+    /// <summary>
+    /// For testing if all of the networks are dead to finish the current generation
+    /// </summary>
+    private bool AllNetworksDead()
+    {
+        foreach(GameObject network in networks)
+        {
+            if (network.GetComponent<Network>())
+            {
+                //network has failed, stop it
+                network.GetComponent<Network>().Alive = false;
+            }
+            else
+            {
+                //network is good, return false
+                return false;
+            }
+        }
+
+        return true;
+    }
     #endregion
 
     #region Calcluations
@@ -505,6 +583,40 @@ public class Core : MonoBehaviour
         }
 
         return x;
+    }
+    #endregion
+
+    #region Saving and loading the network
+    private void Save_Network_To_Device(Network network)
+    {
+        BinaryFormatter formatter = new BinaryFormatter();
+        string path = Application.persistentDataPath + "/" + NetworkSaveName + ".chill";
+        FileStream stream = new FileStream(path, FileMode.Create);
+
+        NetworkData data = new NetworkData(network);
+
+        formatter.Serialize(stream, data);
+        stream.Close();
+    }
+
+    private NetworkData Load_Network()
+    {
+        string path = Application.persistentDataPath + "/" + NetworkSaveName + ".chill";
+        if (File.Exists(path))
+        {
+            BinaryFormatter formatter = new BinaryFormatter();
+            FileStream stream = new FileStream(path, FileMode.Open);
+
+            NetworkData data = formatter.Deserialize(stream) as NetworkData;
+            stream.Close();
+
+            return data;
+        }
+        else
+        {
+            Debug.Log("File not created yet!");
+            return null;
+        }
     }
     #endregion
 }

@@ -5,12 +5,13 @@ using UnityEngine;
 public class Network : MonoBehaviour
 {
     //Network object, will be what the Core script trains
-    [SerializeField] public Core core;
+    private Core core;
 
     private List<List<float[]>> weights;
     private List<float[]> biases;
     private float[] output;
 
+    public bool Alive;
     public float Network_Fitness;
 
     //read only access
@@ -25,9 +26,13 @@ public class Network : MonoBehaviour
 
     public void Init(List<List<float[]>> weights, List<float[]> biases)
     {
+        core = (Core)FindObjectOfType(typeof(Core));
+
         this.weights = weights;
         this.biases = biases;
         output = new float[core.OutputSize];
+
+        Alive = true; //whether or not the network is alive and 
 
         Network_Fitness = 0;
 
@@ -38,7 +43,7 @@ public class Network : MonoBehaviour
         //END OF EDIT REGION
     }
 
-    //init without setting the weights and biases
+    //init without setting the weights and biases. you do not need to edit this
     public void Init()
     {
         Init(this.weights, this.biases);
@@ -88,6 +93,16 @@ public class Network : MonoBehaviour
         return fitness;
     }
 
+    public void checkForFail()
+    {
+        //START OF EDIT REGION
+
+        //set the Alive variable to true if the network is still alive, and set it to false if the network "died" and should no longer run. This makes the training process more efficient.
+        //You don't have to put the code here, you can put it somewhere else, as long as the program sets the Alive variable at the appropriate time
+
+        //END OF EDIT REGION
+    }
+
     #region Other network code
 
     public void setOutput(float[] output)
@@ -96,4 +111,10 @@ public class Network : MonoBehaviour
     }
 
     #endregion
+
+    //START OF EDIT REGION
+
+    //put any additional code you need here for the network to run the way you want it. For example, you could put an on collision enter code block here to sense when a network fails in some way (hits a wall, in the case of the example scene)
+
+    //END OF EDIT REGION
 }
