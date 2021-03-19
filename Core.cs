@@ -7,7 +7,7 @@ using UnityEngine;
 public class Core : MonoBehaviour
 {
     //Enum variables for the network controller to use
-    enum ActivationFunctions { Sigmoid, Tanh, ReLU }
+    enum ActivationFunctions { Input, Sigmoid, Tanh, ReLU }
 
     //Creating variables the user can access in the editor
     [Tooltip("Put the GameObject that will become your network here")]
@@ -39,7 +39,7 @@ public class Core : MonoBehaviour
     [Tooltip("How likely a network will be mutated.")]
     [SerializeField] private float MutationRate;
 
-    [Tooltip("How fast the network will learn / mutate over time")]
+    [Tooltip("How much a network will be mutated by.")]
     [SerializeField] private float Learning_Rate;
 
     [Tooltip("Check this box if you want the network with a higher fitness to be treated as better")]
@@ -162,6 +162,8 @@ public class Core : MonoBehaviour
             Debug.LogError("Network object does not have a Network script attatched!");
         else if (NetworkActivationFunctions.Count != Network_Sizes.Count)
             Debug.LogError("Network activation functions list is not the same size as the neural network!");
+        else if (!InputLayerCorrect())
+            Debug.LogError("Input layer was not set up correctly (more than one or non in the right place). Input should be selected as the network's first activation function only.");
         else if (TimePerGeneration < 0)
             Debug.LogError("Negative time given for each generation!");
         else if (SaveNetwork && NetworkSaveName.Length == 0)
@@ -235,6 +237,32 @@ public class Core : MonoBehaviour
 
     #region Network Management Code
 
+    ///
+    /// Does a simple check to make sure that the network has an input layer defined in the right spot
+    ///
+    private bool InputLayerCorrect()
+    {
+        if(NetworkActivationFunctions[0] == ActivationFunctions.Input)
+        {
+            //user has a activation function in the right place
+
+            for(int i=1; i<NetworkActivationFunctions.Count; i++)
+            {
+                if(NetworkActivationFunctions[i] == ActivationFunctions.Input)
+                {
+                    //user has more than one input layer. return false
+                    return false;
+                }
+            }
+
+            return true; //if everything is set up correctly, return true
+        }
+        else
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// Initializing as many networks as the user specifies in the editor
     /// 
@@ -244,36 +272,43 @@ public class Core : MonoBehaviour
     {
         networks = new List<GameObject>();
 
-        for(int network = 0; network < NumberOfNetworks; network++)
+        //if the user wants to load a network, make sure there's a network to load that has the right settings
+        if (LoadNetwork)
+        {
+            if (Load_Network() == null)
+                Debug.LogWarning("No network found to load. Using random weights and biases instead");
+            else
+            {
+                Debug.Log("Network found!");
+
+                //load the network and intialize a generation with them
+                NetworkData data = Load_Network();
+
+                //if any of the settings are incorrect, change the settings and continue with a warning
+                if (data.network.Biases.Count != networkSize || data.network.Biases[0].Length != inputSize || data.network.Biases[data.network.Biases.Count - 1].Length != outputSize)
+                {
+                    Debug.LogWarning("Loaded network has different input, output, or size than what is required! Changing settings and attempting to train...");
+
+                    //changing the settings of the Core script to match that of the loaded model
+                    networkSize = data.network.Biases.Count;
+                    inputSize = data.network.Biases[0].Length;
+                    outputSize = data.network.Biases[data.network.Biases.Count - 1].Length;
+                }
+            }
+        }
+
+        //creating the networks
+        for (int network = 0; network < NumberOfNetworks; network++)
         {
             networks.Insert(0, Instantiate(Neural_Network, StartPosition, Quaternion.identity));
 
             //initializing the network with random weights and biases
             if (LoadNetwork)
             {
-                if (Load_Network() == null)
-                    Debug.LogWarning("No network found to load. Using random weights and biases instead");
-                else
-                {
-                    Debug.Log("Network found!");
+                NetworkData data = Load_Network();
 
-                    //load the network and intialize a generation with them
-                    NetworkData data = Load_Network();
-
-                    //if any of the settings are off, change the settings and continue with a warning
-                    if(data.network.Biases.Count != networkSize || data.network.Biases[0].Length != inputSize || data.network.Biases[data.network.Biases.Count - 1].Length != outputSize)
-                    {
-                        Debug.LogWarning("Loaded network has different input, output, or size than what is required! Changing settings and attempting to train...");
-
-                        //changing the settings of the Core script to match that of the loaded model
-                        networkSize = data.network.Biases.Count;
-                        inputSize = data.network.Biases[0].Length;
-                        outputSize = data.network.Biases[data.network.Biases.Count - 1].Length;
-                    }
-
-                    //initializing the network with the loaded parameters
-                    networks[0].GetComponent<Network>().Init(data.network.Weights, data.network.Biases);
-                }
+                //initializing the network with the loaded parameters
+                networks[0].GetComponent<Network>().Init(data.network.Weights, data.network.Biases);
             }
             else
             {
