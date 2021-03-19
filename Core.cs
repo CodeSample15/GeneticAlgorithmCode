@@ -141,7 +141,7 @@ public class Core : MonoBehaviour
 
     void Awake()
     {
-        //initializing variables that doesn't require user input first
+        //initializing variables that don't require user input first
         successfulInit = false;
 
         currentGen = 0;
@@ -275,8 +275,10 @@ public class Core : MonoBehaviour
         //if the user wants to load a network, make sure there's a network to load that has the right settings
         if (LoadNetwork)
         {
-            if (Load_Network() == null)
+            if (Load_Network() == null) {
                 Debug.LogWarning("No network found to load. Using random weights and biases instead");
+                LoadNetwork = false;
+            }
             else
             {
                 Debug.Log("Network found!");
