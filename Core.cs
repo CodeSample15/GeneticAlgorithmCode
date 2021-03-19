@@ -90,6 +90,7 @@ public class Core : MonoBehaviour
     //information about training
     private int currentGen;
     private float timeElapsedOnGen;
+    private float bestFitness; //the best fitness of the last generation to train. Does not record the best fitness overall
 
     //giving the other programs limited access to some of the private data
     #region Read Only Variables
@@ -127,6 +128,11 @@ public class Core : MonoBehaviour
     {
         get { return MutationRate; }
     }
+    
+    public float BestFitness
+    {
+        get { return bestFitness; }
+    }
 
     public float lr
     {
@@ -146,6 +152,7 @@ public class Core : MonoBehaviour
 
         currentGen = 0;
         timeElapsedOnGen = 0f;
+        bestFitness = 0f;
 
         //error trapping
         if (Network_Sizes.Count < 2)
@@ -204,9 +211,11 @@ public class Core : MonoBehaviour
                 else
                 {
                     //reset the networks and apply genetic algorithm------------------------------------------------------------------
-
+                    
                     //first get the best networks to the top of the list
                     getTopNetworks();
+                    
+                    bestFitness = networks[0].getComponent<Network>().Network_Fitness; //recording the best fitness of the generation
 
                     //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
                     SetLowerNetworks();
@@ -216,6 +225,10 @@ public class Core : MonoBehaviour
 
                     timeElapsedOnGen = 0f; //resetting the time
                     currentGen++; //starting a new generation
+                    
+                    //logging a message saying what generation the program is currently training and how well the last generation performed
+                    Debug.Log("Best fitness of generation " + (currentGen-1).toString() + ": " + bestFitness.toString());
+                    Debug.Log("Training generation " + currentGen.toString() + "...");
                 }
             }
             else
