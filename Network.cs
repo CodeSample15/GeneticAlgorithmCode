@@ -24,6 +24,12 @@ public class Network : MonoBehaviour
         get { return biases; }
     }
 
+    //START OF EDIT REGION
+    
+    //add any additional variables that you need for your network here
+    
+    //END OF EDIT REGION
+
     public void Init(List<List<float[]>> weights, List<float[]> biases)
     {
         core = (Core)FindObjectOfType(typeof(Core));
