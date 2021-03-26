@@ -4,10 +4,11 @@ using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
-public class Core : MonoBehaviour
+public class Controller : MonoBehaviour
 {
     //Enum variables for the network controller to use
     enum ActivationFunctions { Input, Sigmoid, Tanh, ReLU }
+    enum MutationTypes { TopHalf, TopTwo }
 
     //Creating variables the user can access in the editor
     [Tooltip("Put the GameObject that will become your network here")]
@@ -26,6 +27,9 @@ public class Core : MonoBehaviour
 
 
     [Header("Training varialbes")]
+
+    [Tooltip("How the netorks will be mutated")]
+    [SerializeField] private MutationTypes mutationType;
 
     [Tooltip("How long (in seconds) each generation should last")]
     [SerializeField] private float TimePerGeneration;
@@ -177,6 +181,8 @@ public class Core : MonoBehaviour
             Debug.LogError("Save button is set to true but there isn't a save name entered!");
         else if (MutationRate < 0)
             Debug.LogError("Mutation rate is negative!");
+        else if (mutationType == MutationTypes.TopTwo && Number_Of_Networks < 3)
+            Debug.LogError("TopTwo mutation type was chosen but there are less than 3 networks!");
         else
         {
             Debug.Log("Initializing...");
@@ -217,8 +223,11 @@ public class Core : MonoBehaviour
 
                     bestFitness = networks[0].GetComponent<Network>().Network_Fitness; //recording the best fitness of the generation
 
-                    //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
-                    SetLowerNetworks();
+                    //creating the next generation of networks using the method the user picks
+                    if (mutationType == MutationTypes.TopHalf)
+                        SetLowerNetworks(); //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
+                    else
+                        CrossTopTwoNetworks(); //fill the next generation with mutated children of the top two networks
 
                     //reset all of the networks for the next generation
                     resetNetworks();
@@ -228,7 +237,7 @@ public class Core : MonoBehaviour
 
                     //logging a message saying what generation the program is currently training and how well the last generation performed
                     Debug.Log("Best fitness of generation " + (currentGen).ToString() + ": " + bestFitness.ToString());
-                    Debug.Log("Training generation " + currentGen.ToString() + "...");
+                    Debug.Log("Training generation " + (currentGen).ToString() + "...");
                 }
             }
             else
@@ -303,14 +312,16 @@ public class Core : MonoBehaviour
                 NetworkData data = Load_Network();
 
                 //if any of the settings are incorrect, change the settings and continue with a warning
-                if (data.biases.Count != networkSize || data.biases[0].Length != inputSize || data.biases[data.biases.Count - 1].Length != outputSize)
+                if (data.biases.Count != networkSize || data.inputSize != inputSize || data.outputSize != outputSize)
                 {
                     Debug.LogWarning("Loaded network has different input, output, or size than what is required! Changing settings and attempting to train...");
 
+                    /*
                     //changing the settings of the Core script to match that of the loaded model
                     networkSize = data.biases.Count;
                     inputSize = data.biases[0].Length;
                     outputSize = data.biases[data.biases.Count - 1].Length;
+                    */
                 }
             }
         }
@@ -457,6 +468,30 @@ public class Core : MonoBehaviour
     }
 
     /// <summary>
+    /// Instead of cloning the top half of the networks and mutating them, cross the top two networks over and use that network to create the rest of the offspring with mutations
+    /// </summary>
+    private void CrossTopTwoNetworks()
+    {
+        //getting the child of the top two networks
+        List<float[]> childBiases = combineBiases(networks[0].GetComponent<Network>().Biases, networks[1].GetComponent<Network>().Biases);
+        List<List<float[]>> childWeights = combineWeights(networks[0].GetComponent<Network>().Weights, networks[1].GetComponent<Network>().Weights);
+
+        //variables that will be used inside of the loop
+        List<float[]> newBiases;
+        List<List<float[]>> newWeights;
+
+        //changing the rest of the networks
+        for(int i=2; i<Number_Of_Networks; i++)
+        {
+            newBiases = MutateBiases(childBiases);
+            newWeights = MutateWeights(childWeights);
+
+            //giving the new weights and biases to the old network
+            networks[i].GetComponent<Network>().Init(newWeights, newBiases);
+        }
+    }
+
+    /// <summary>
     /// Returns a mutated version of the biases entered into this method.
     /// 
     /// Does this by adding a random amount (determined by learning rate) to one of the biases at a rate set by the MutationRate.
@@ -531,6 +566,58 @@ public class Core : MonoBehaviour
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Takes the biases from two parent networks and adds them together to make a child set of network biases
+    /// </summary>
+    private List<float[]> combineBiases(List<float[]> bias1, List<float[]> bias2)
+    {
+        //creating a new set of biases
+        List<float[]> combined = new List<float[]>();
+        combined.Add(new float[0]); //adding the first layer, which is ignored
+
+        for(int layer=1; layer<networkSize; layer++)
+        {
+            combined.Add(new float[Network_Sizes[layer]]); //adding a set of neurons for the next layer
+
+            for(int neuron=0; neuron<Network_Sizes[layer]; neuron++)
+            {
+                //finding the average between the parents and setting them to the child set of biases
+                combined[layer][neuron] = (bias1[layer][neuron] + bias2[layer][neuron]) / 2;
+            }
+        }
+
+        return combined; //return the child
+    }
+
+    /// <summary>
+    /// Takes the weights from two parent networks and adds them together to make a child set of network weights
+    /// (Same process as the method above this one)
+    /// </summary>
+    private List<List<float[]>> combineWeights(List<List<float[]>> weight1, List<List<float[]>> weight2)
+    {
+        //creating a new set of weights
+        List<List<float[]>> combined = new List<List<float[]>>();
+        combined.Add(new List<float[]>()); //adding the first layer, which is ignored
+
+        for (int layer=1; layer < networkSize; layer++)
+        {
+            combined.Add(new List<float[]>()); //adding a new layer
+
+            for(int neuron=0; neuron < Network_Sizes[layer]; neuron++)
+            {
+                combined[layer].Add(new float[Network_Sizes[layer - 1]]);
+
+                for(int prevneuron=0; prevneuron < Network_Sizes[layer-1]; prevneuron++)
+                {
+                    //finding the average between the parents and assigning the sum to the child weight
+                    combined[layer][neuron][prevneuron] = (weight1[layer][neuron][prevneuron] + weight2[layer][neuron][prevneuron]) / 2;
+                }
+            }
+        }
+
+        return combined; //return the child
     }
 
     /// <summary>
@@ -672,7 +759,7 @@ public class Core : MonoBehaviour
         string path = Application.persistentDataPath + "/" + NetworkSaveName + ".chill";
         FileStream stream = new FileStream(path, FileMode.Create);
 
-        NetworkData data = new NetworkData(weights, biases);
+        NetworkData data = new NetworkData(weights, biases, InputSize, OutputSize);
 
         formatter.Serialize(stream, data);
         stream.Close();
