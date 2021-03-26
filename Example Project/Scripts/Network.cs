@@ -5,7 +5,7 @@ using UnityEngine;
 public class Network : MonoBehaviour
 {
     //Network object, will be what the Core script trains
-    private Core core;
+    private Controller controller;
 
     private List<List<float[]>> weights;
     private List<float[]> biases;
@@ -37,11 +37,11 @@ public class Network : MonoBehaviour
 
     public void Init(List<List<float[]>> weights, List<float[]> biases)
     {
-        core = (Core)FindObjectOfType(typeof(Core));
+        controller = (Controller)FindObjectOfType(typeof(Controller));
 
         this.weights = weights;
         this.biases = biases;
-        output = new float[core.OutputSize];
+        output = new float[controller.OutputSize];
 
         Alive = true; //whether or not the network is alive and 
 
@@ -52,7 +52,7 @@ public class Network : MonoBehaviour
         //put any code here that you want for initialization here
         carLength = 1.53f;
         speed = 2f;
-        maxTurnSpeed = 1f;
+        maxTurnSpeed = 1.2f;
 
         totalTurn = 0f;
         timeAlive = 0f;
@@ -146,15 +146,14 @@ public class Network : MonoBehaviour
 
         //recording fitness based off of how long it's been alive
         timeAlive += Time.deltaTime;
-        fitness = distance(transform.position.x, transform.position.z, core.startPosition.x, core.startPosition.z);
+        //fitness = distance(transform.position.x, transform.position.z, core.startPosition.x, core.startPosition.z);
+        fitness += timeAlive;
 
-        if(Mathf.Abs(totalTurn) >= 720)
+        if (Mathf.Abs(totalTurn) >= 720)
         {
             fitness = 0; //if the network turns too much, fitness is set to zero and kill the network
             Alive = false;
         }
-
-        fitness += timeAlive * timeAlive;
         //END OF EDIT REGION
 
 
