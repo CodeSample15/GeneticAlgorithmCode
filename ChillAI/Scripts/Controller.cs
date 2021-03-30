@@ -8,7 +8,7 @@ public class Controller : MonoBehaviour
 {
     //Enum variables for the network controller to use
     enum ActivationFunctions { Input, Sigmoid, Tanh, ReLU }
-    enum MutationTypes { TopHalf, TopTwo }
+    enum MutationTypes { TopHalf, TopTwo, Top }
 
     //Creating variables the user can access in the editor
     [Tooltip("Put the GameObject that will become your network here")]
@@ -224,10 +224,20 @@ public class Controller : MonoBehaviour
                     bestFitness = networks[0].GetComponent<Network>().Network_Fitness; //recording the best fitness of the generation
 
                     //creating the next generation of networks using the method the user picks
-                    if (mutationType == MutationTypes.TopHalf)
-                        SetLowerNetworks(); //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
-                    else
-                        CrossTopTwoNetworks(); //fill the next generation with mutated children of the top two networks
+                    switch(mutationType)
+                    {
+                        case MutationTypes.TopHalf:
+                            SetLowerNetworks(); //reuse the top half of the networks and change the bottom half to mutated versions of the top half networks
+                            break;
+
+                        case MutationTypes.TopTwo:
+                            CrossTopTwoNetworks(); //fill the next generation with mutated children of the top two networks
+                            break;
+
+                        case MutationTypes.Top:
+                            SetLowerNetworks(networks[0].GetComponent<Network>()); //cloning + mutating the best network to the rest of the networks
+                            break;
+                    }
 
                     //reset all of the networks for the next generation
                     resetNetworks();
@@ -237,7 +247,7 @@ public class Controller : MonoBehaviour
 
                     //logging a message saying what generation the program is currently training and how well the last generation performed
                     Debug.Log("Best fitness of generation " + (currentGen).ToString() + ": " + bestFitness.ToString());
-                    Debug.Log("Training generation " + (currentGen).ToString() + "...");
+                    Debug.Log("Training generation " + (currentGen+1).ToString() + "...");
                 }
             }
             else
@@ -468,6 +478,25 @@ public class Controller : MonoBehaviour
     }
 
     /// <summary>
+    /// Overloaded version of the SetLowerNetworks method to set the lower network to a certain network
+    /// </summary>
+    private void SetLowerNetworks(Network network)
+    {
+        network.Init();
+
+        //starting with the second network in the list and cloning + mutating the network fed as an argument
+        for (int i = 1; i < Number_Of_Networks; i++)
+        {
+            //mutating the weights and biases of the old network
+            List<List<float[]>> newWeights = MutateWeights(network.Weights);
+            List<float[]> newBiases = MutateBiases(network.Biases);
+
+            //reinitializing the network with the new weights and biases
+            networks[i].GetComponent<Network>().Init(newWeights, newBiases);
+        }
+    }
+
+    /// <summary>
     /// Instead of cloning the top half of the networks and mutating them, cross the top two networks over and use that network to create the rest of the offspring with mutations
     /// </summary>
     private void CrossTopTwoNetworks()
@@ -488,6 +517,103 @@ public class Controller : MonoBehaviour
 
             //giving the new weights and biases to the old network
             networks[i].GetComponent<Network>().Init(newWeights, newBiases);
+        }
+    }
+    #endregion
+
+    #region Calcluations
+    private float randomFloat(float min, float max)
+    {
+        return (float)Random.Range(min, max);
+    }
+
+    private float[] randomArray(int size, float min, float max)
+    {
+        float[] output = new float[size];
+
+        for (int i = 0; i < size; i++)
+            output[i] = randomFloat(min, max);
+
+        return output;
+    }
+
+    private List<float[]> randomList(float min, float max)
+    {
+        List<float[]> output = new List<float[]>();
+
+        for (int layer = 0; layer < networkSize; layer++)
+        {
+            output.Add(randomArray(Network_Sizes[layer], min, max));
+        }
+
+        return output;
+    }
+
+    private List<List<float[]>> randomMatrix(float min, float max)
+    {
+        List<List<float[]>> output = new List<List<float[]>>();
+
+        output.Add(new List<float[]>()); //for the input layer, which won't have a prev neuron to assign a synapse to
+
+        for (int layer = 1; layer < networkSize; layer++)
+        {
+            output.Add(new List<float[]>());
+
+            for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
+            {
+                output[layer].Add(randomArray(Network_Sizes[layer - 1], min, max));
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>
+    /// Calculate the output for a given network. Returns an array containing the output values for the given input
+    /// </summary>
+    private float[] Calculate(Network network, List<float> input)
+    {
+        //checking to make sure that input size is correct
+        if (input.Count == inputSize)
+        {
+            //transferring the data in the list to an array
+            float[] arrayInput = new float[inputSize];
+            for (int i = 0; i < input.Count; i++)
+                arrayInput[i] = input[i];
+
+            //defining an array to hold the outputs and assigning the first value in the list to the input array
+            List<float[]> outputs = new List<float[]>();
+            outputs.Add(arrayInput); //feeding input
+
+            for (int layer = 1; layer < networkSize; layer++)
+                outputs.Add(new float[Network_Sizes[layer]]);
+
+            List<float[]> biases = network.Biases;
+            List<List<float[]>> weights = network.Weights;
+
+            for (int layer = 1; layer < networkSize; layer++)
+            {
+                for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
+                {
+                    float sum = biases[layer][neuron];
+
+                    for (int prevneuron = 0; prevneuron < Network_Sizes[layer - 1]; prevneuron++)
+                    {
+                        sum += outputs[layer - 1][prevneuron] * weights[layer][neuron][prevneuron];
+                    }
+
+                    outputs[layer][neuron] = applyActivationFunction(sum, NetworkActivationFunctions[layer]);
+                }
+            }
+
+            return outputs[outputs.Count - 1];
+        }
+        else
+        {
+            //the input the user entered is the wrong size
+            Debug.LogError("Wrong size input given to the network!");
+            //Destroy(gameObject); //end the program
+            return null;
         }
     }
 
@@ -542,15 +668,15 @@ public class Controller : MonoBehaviour
         output.Add(new List<float[]>()); //adding the first layer, which is for input and doesn't have its own set of weights
 
         //mutating
-        for(int layer = 1; layer < networkSize; layer++)
+        for (int layer = 1; layer < networkSize; layer++)
         {
             output.Add(new List<float[]>());
 
             for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
             {
-                output[layer].Add(new float[Network_Sizes[layer-1]]);
+                output[layer].Add(new float[Network_Sizes[layer - 1]]);
 
-                for(int prevneuron = 0; prevneuron < Network_Sizes[layer-1]; prevneuron++)
+                for (int prevneuron = 0; prevneuron < Network_Sizes[layer - 1]; prevneuron++)
                 {
                     //calculating a random chance for mutation. If the random number generated is less than or equal to the mutation rate, then the value the loop is currently on will be mutated
                     WeightMutate = Random.Range(0.00f, 1.00f) <= MutationRate;
@@ -577,11 +703,11 @@ public class Controller : MonoBehaviour
         List<float[]> combined = new List<float[]>();
         combined.Add(new float[0]); //adding the first layer, which is ignored
 
-        for(int layer=1; layer<networkSize; layer++)
+        for (int layer = 1; layer < networkSize; layer++)
         {
             combined.Add(new float[Network_Sizes[layer]]); //adding a set of neurons for the next layer
 
-            for(int neuron=0; neuron<Network_Sizes[layer]; neuron++)
+            for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
             {
                 //finding the average between the parents and setting them to the child set of biases
                 combined[layer][neuron] = (bias1[layer][neuron] + bias2[layer][neuron]) / 2;
@@ -601,15 +727,15 @@ public class Controller : MonoBehaviour
         List<List<float[]>> combined = new List<List<float[]>>();
         combined.Add(new List<float[]>()); //adding the first layer, which is ignored
 
-        for (int layer=1; layer < networkSize; layer++)
+        for (int layer = 1; layer < networkSize; layer++)
         {
             combined.Add(new List<float[]>()); //adding a new layer
 
-            for(int neuron=0; neuron < Network_Sizes[layer]; neuron++)
+            for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
             {
                 combined[layer].Add(new float[Network_Sizes[layer - 1]]);
 
-                for(int prevneuron=0; prevneuron < Network_Sizes[layer-1]; prevneuron++)
+                for (int prevneuron = 0; prevneuron < Network_Sizes[layer - 1]; prevneuron++)
                 {
                     //finding the average between the parents and assigning the sum to the child weight
                     combined[layer][neuron][prevneuron] = (weight1[layer][neuron][prevneuron] + weight2[layer][neuron][prevneuron]) / 2;
@@ -635,100 +761,6 @@ public class Controller : MonoBehaviour
         }
 
         return true;
-    }
-    #endregion
-
-    #region Calcluations
-    private float randomFloat(float min, float max)
-    {
-        return (float)Random.Range(min, max);
-    }
-
-    private float[] randomArray(int size, float min, float max)
-    {
-        float[] output = new float[size];
-
-        for (int i = 0; i < size; i++)
-            output[i] = randomFloat(min, max);
-
-        return output;
-    }
-
-    private List<float[]> randomList(float min, float max)
-    {
-        List<float[]> output = new List<float[]>();
-
-        for (int layer = 0; layer < networkSize; layer++)
-        {
-            output.Add(randomArray(Network_Sizes[layer], min, max));
-        }
-
-        return output;
-    }
-
-    private List<List<float[]>> randomMatrix(float min, float max)
-    {
-        List<List<float[]>> output = new List<List<float[]>>();
-
-        output.Add(new List<float[]>()); //for the input layer, which won't have a prev neuron to assign a synapse to
-
-        for (int layer = 1; layer < networkSize; layer++)
-        {
-            output.Add(new List<float[]>());
-
-            for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
-            {
-                output[layer].Add(randomArray(Network_Sizes[layer - 1], min, max));
-            }
-        }
-
-        return output;
-    }
-
-    private float[] Calculate(Network network, List<float> input)
-    {
-        //checking to make sure that input size is correct
-        if (input.Count == inputSize)
-        {
-            //transferring the data in the list to an array
-            float[] arrayInput = new float[inputSize];
-            for (int i = 0; i < input.Count; i++)
-                arrayInput[i] = input[i];
-
-            //defining an array to hold the outputs and assigning the first value in the list to the input array
-            List<float[]> outputs = new List<float[]>();
-            outputs.Add(arrayInput); //feeding input
-
-            for (int layer = 1; layer < networkSize; layer++)
-                outputs.Add(new float[Network_Sizes[layer]]);
-
-            List<float[]> biases = network.Biases;
-            List<List<float[]>> weights = network.Weights;
-
-            for (int layer = 1; layer < networkSize; layer++)
-            {
-                for (int neuron = 0; neuron < Network_Sizes[layer]; neuron++)
-                {
-                    float sum = biases[layer][neuron];
-
-                    for (int prevneuron = 0; prevneuron < Network_Sizes[layer - 1]; prevneuron++)
-                    {
-                        sum += outputs[layer - 1][prevneuron] * weights[layer][neuron][prevneuron];
-                    }
-
-                    outputs[layer][neuron] = applyActivationFunction(sum, NetworkActivationFunctions[layer]);
-                }
-            }
-
-            return outputs[outputs.Count - 1];
-        }
-        else
-        {
-            //the input the user entered is the wrong size
-            Debug.LogError("Wrong size input given to the network!");
-            //Destroy(gameObject); //end the program
-            return null;
-        }
     }
 
     private float applyActivationFunction(float x, ActivationFunctions activationFunction)
