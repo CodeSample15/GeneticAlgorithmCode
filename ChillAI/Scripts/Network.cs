@@ -5,7 +5,7 @@ using UnityEngine;
 public class Network : MonoBehaviour
 {
     //Network object, will be what the Core script trains
-    private Core core;
+    private Controller controller;
 
     private List<List<float[]>> weights;
     private List<float[]> biases;
@@ -26,7 +26,7 @@ public class Network : MonoBehaviour
 
     public void Init(List<List<float[]>> weights, List<float[]> biases)
     {
-        core = (Core)FindObjectOfType(typeof(Core));
+        controller = (Controller)FindObjectOfType(typeof(Controller));
 
         this.weights = weights;
         this.biases = biases;
