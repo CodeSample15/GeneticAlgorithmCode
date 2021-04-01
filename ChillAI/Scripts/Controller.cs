@@ -7,7 +7,7 @@ using UnityEngine;
 public class Controller : MonoBehaviour
 {
     //Enum variables for the network controller to use
-    enum ActivationFunctions { Input, Sigmoid, Tanh, ReLU }
+    enum ActivationFunctions { Input, Sigmoid, Tanh, ReLU, Binary_Step }
     enum MutationTypes { TopHalf, TopTwo, Top }
 
     //Creating variables the user can access in the editor
@@ -777,6 +777,13 @@ public class Controller : MonoBehaviour
 
             case ActivationFunctions.ReLU:
                 x = Mathf.Max(0, x);
+                break;
+                
+            case ActivationFunctions.Binary_Step:
+                if(x < 0)
+                    x = 0;
+                else
+                    x = 1;
                 break;
         }
 
