@@ -30,7 +30,7 @@ public class Network : MonoBehaviour
 
         this.weights = weights;
         this.biases = biases;
-        output = new float[core.OutputSize];
+        output = new float[controller.OutputSize];
 
         Alive = true; //whether or not the network is alive and 
 
